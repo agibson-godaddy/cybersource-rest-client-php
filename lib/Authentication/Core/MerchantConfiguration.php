@@ -24,6 +24,25 @@ class MerchantConfiguration
     protected $authenticationType = '';
 
     /**
+     * Signing method when authenticationType is JWT.
+     *
+     * Either GlobalParameter::JWT_SIGNING_P12 (default) for X.509 / RS256 signing using a P12
+     * certificate, or GlobalParameter::JWT_SIGNING_SHARED_SECRET for HMAC signing using a
+     * shared-secret key pair generated in the CyberSource Business Center.
+     *
+     * @var string
+     */
+    protected $jwtSigningMethod = GlobalParameter::JWT_SIGNING_P12;
+
+    /**
+     * HMAC algorithm used when jwtSigningMethod is SHARED_SECRET. Supported values are
+     * HS256, HS384, and HS512. Defaults to HS256.
+     *
+     * @var string
+     */
+    protected $jwtSharedSecretAlgorithm = GlobalParameter::HS256;
+
+    /**
      * merchantID for HTTP basic authentication
      *
      * @var string
@@ -378,6 +397,55 @@ class MerchantConfiguration
     public function getAuthenticationType()
     {
         return $this->authenticationType;
+    }
+
+    /**
+     * Sets the JWT signing method.
+     *
+     * Accepts GlobalParameter::JWT_SIGNING_P12 (default, RS256 via P12 certificate) or
+     * GlobalParameter::JWT_SIGNING_SHARED_SECRET (HMAC via shared secret key pair).
+     *
+     * @param string $jwtSigningMethod
+     *
+     * @return $this
+     */
+    public function setJwtSigningMethod($jwtSigningMethod)
+    {
+        $this->jwtSigningMethod = strtoupper(trim((string) $jwtSigningMethod));
+        return $this;
+    }
+
+    /**
+     * Gets the JWT signing method. Defaults to P12 for backward compatibility.
+     *
+     * @return string
+     */
+    public function getJwtSigningMethod()
+    {
+        return $this->jwtSigningMethod;
+    }
+
+    /**
+     * Sets the HMAC algorithm used when signing with a shared secret.
+     *
+     * @param string $algorithm One of HS256, HS384, HS512.
+     *
+     * @return $this
+     */
+    public function setJwtSharedSecretAlgorithm($algorithm)
+    {
+        $this->jwtSharedSecretAlgorithm = strtoupper(trim((string) $algorithm));
+        return $this;
+    }
+
+    /**
+     * Gets the HMAC algorithm used when signing with a shared secret.
+     *
+     * @return string
+     */
+    public function getJwtSharedSecretAlgorithm()
+    {
+        return $this->jwtSharedSecretAlgorithm;
     }
 
     /**
@@ -1398,6 +1466,12 @@ class MerchantConfiguration
         else
             $error_message .= GlobalParameter::AUTHTYPE;
 
+        if(isset($connectionDet->jwtSigningMethod))
+            $config = $config->setJwtSigningMethod($connectionDet->jwtSigningMethod);
+
+        if(isset($connectionDet->jwtSharedSecretAlgorithm))
+            $config = $config->setJwtSharedSecretAlgorithm($connectionDet->jwtSharedSecretAlgorithm);
+
         if(isset($connectionDet->merchantID))
             $config = $config->setMerchantID($connectionDet->merchantID);
         else
@@ -1595,35 +1669,56 @@ class MerchantConfiguration
             $error_message .= GlobalParameter::MERCHANTID_REQ . PHP_EOL;
         }
 
-        if(empty($this->getKeyAlias()) && $this->getAuthenticationType() == GlobalParameter::JWT){
-            $warning_message .= GlobalParameter::KEY_ALIAS_NULL_EMPTY . PHP_EOL;
-        }
+        if($this->getAuthenticationType() == GlobalParameter::JWT){
+            $signingMethod = $this->getJwtSigningMethod();
 
-        // Only enforce KeyAlias = MerchantId when UseMetaKey is false
-        if($this->getAuthenticationType() == GlobalParameter::JWT && !$this->getUseMetaKey()){
-            if(!empty($this->getKeyAlias()) && ($this->getKeyAlias() != $this->getMerchantID())){
-                $this->setKeyAlias($this->getMerchantID());
-                $warning_message .= GlobalParameter::KEY_ALIAS_INCORRECT . PHP_EOL;
+            if($signingMethod === GlobalParameter::JWT_SIGNING_SHARED_SECRET){
+
+                if(empty($this->getApiKeyID())){
+                    $error_message .= GlobalParameter::JWT_SHARED_SECRET_KEY_ID_REQ;
+                }
+
+                if(empty($this->getSecretKey())){
+                    $error_message .= GlobalParameter::JWT_SHARED_SECRET_KEY_REQ;
+                }
+
+                if(!in_array($this->getJwtSharedSecretAlgorithm(), GlobalParameter::SUPPORTED_JWT_SHARED_SECRET_ALGS, true)){
+                    $error_message .= GlobalParameter::JWT_SHARED_SECRET_INVALID_ALG;
+                }
+
+            } else {
+
+                if(empty($this->getKeyAlias())){
+                    $warning_message .= GlobalParameter::KEY_ALIAS_NULL_EMPTY . PHP_EOL;
+                }
+
+                // Only enforce KeyAlias = MerchantId when UseMetaKey is false
+                if(!$this->getUseMetaKey()){
+                    if(!empty($this->getKeyAlias()) && ($this->getKeyAlias() != $this->getMerchantID())){
+                        $this->setKeyAlias($this->getMerchantID());
+                        $warning_message .= GlobalParameter::KEY_ALIAS_INCORRECT . PHP_EOL;
+                    }
+                }
+
+                if($this->getUseMetaKey()){
+                    if(!empty($this->getKeyAlias()) && ($this->getKeyAlias() != $this->getPortfolioID())){
+                        $this->setKeyAlias($this->getPortfolioID());
+                        $warning_message .= GlobalParameter::INCORRECT_KEY_ALIAS_FOR_METAKEY . PHP_EOL;
+                    }
+                }
+
+                if(empty($this->getKeyFileName())){
+                    $warning_message .= GlobalParameter::KEY_FILE_NULL_EMPTY . PHP_EOL;
+                }
+
+                if(empty($this->getKeyPassword())){
+                    $error_message .= GlobalParameter::KEY_PASSWORD_EMPTY . PHP_EOL;
+                }
+
+                if(empty($this->getKeysDirectory())){
+                    $warning_message .= GlobalParameter::KEY_DIRECTORY_EMPTY . PHP_EOL;
+                }
             }
-        }
-
-        if($this->getAuthenticationType() == GlobalParameter::JWT && $this->getUseMetaKey()){
-            if(!empty($this->getKeyAlias()) && ($this->getKeyAlias() != $this->getPortfolioID())){
-                $this->setKeyAlias($this->getPortfolioID());
-                $warning_message .= GlobalParameter::INCORRECT_KEY_ALIAS_FOR_METAKEY . PHP_EOL;
-            }
-        }
-
-        if(empty($this->getKeyFileName()) && $this->getAuthenticationType() == GlobalParameter::JWT){
-            $warning_message .= GlobalParameter::KEY_FILE_NULL_EMPTY . PHP_EOL;
-        }
-
-        if(empty($this->getKeyPassword()) && $this->getAuthenticationType() == GlobalParameter::JWT){
-            $error_message .= GlobalParameter::KEY_PASSWORD_EMPTY . PHP_EOL;
-        }
-        
-        if(empty($this->getKeysDirectory()) && $this->getAuthenticationType() == GlobalParameter::JWT){
-            $warning_message .= GlobalParameter::KEY_DIRECTORY_EMPTY . PHP_EOL;
         }
 
         if(empty($this->getMerchantID()) && $this->getAuthenticationType() == GlobalParameter::HTTP_SIGNATURE){

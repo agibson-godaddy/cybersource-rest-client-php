@@ -36,6 +36,19 @@ class JsonWebTokenGenerator implements TokenGenerator
     {
         $jwtPayload = $this->getPayloadClaimSet($resourcePath, $payloadData, $method, $merchantConfig, $isResponseMLEForAPI);
         $headerClaimSet = $this->getHeaderClaimSet();
+
+        if ($merchantConfig->getJwtSigningMethod() === GlobalParameter::JWT_SIGNING_SHARED_SECRET) {
+            $generatedToken = $this->signWithSharedSecret($jwtPayload, $headerClaimSet, $merchantConfig);
+        } else {
+            $generatedToken = $this->signWithP12Certificate($jwtPayload, $headerClaimSet, $merchantConfig);
+        }
+
+        self::$logger->close();
+        return "Bearer ".$generatedToken;
+    }
+
+    private function signWithP12Certificate($jwtPayload, $headerClaimSet, $merchantConfig)
+    {
         try {
             $cacheData = self::$cache->grabFileFromP12($merchantConfig);
         } catch (AuthException $e) {
@@ -52,9 +65,38 @@ class JsonWebTokenGenerator implements TokenGenerator
         }
 
         $kid = strval($this->extractSerialNumber($x509Certificate));
-        $generatedToken = JWT::encode($jwtPayload, $privateKey, GlobalParameter::RS256, $kid, $headerClaimSet);
-        self::$logger->close();
-        return "Bearer ".$generatedToken;
+        return JWT::encode($jwtPayload, $privateKey, GlobalParameter::RS256, $kid, $headerClaimSet);
+    }
+
+    private function signWithSharedSecret($jwtPayload, $headerClaimSet, $merchantConfig)
+    {
+        $algorithm = $merchantConfig->getJwtSharedSecretAlgorithm();
+        if (!in_array($algorithm, GlobalParameter::SUPPORTED_JWT_SHARED_SECRET_ALGS, true)) {
+            self::$logger->error("AuthException: " . GlobalParameter::JWT_SHARED_SECRET_INVALID_ALG);
+            throw new AuthException("AuthException: " . GlobalParameter::JWT_SHARED_SECRET_INVALID_ALG);
+        }
+
+        $kid = $merchantConfig->getApiKeyID();
+        if (empty($kid)) {
+            self::$logger->error("AuthException: " . GlobalParameter::JWT_SHARED_SECRET_KEY_ID_REQ);
+            throw new AuthException("AuthException: " . GlobalParameter::JWT_SHARED_SECRET_KEY_ID_REQ);
+        }
+
+        // The shared secret value is base64-encoded in the Business Center; decode it before
+        // using it as an HMAC key, per CyberSource JWT shared-secret guidance.
+        $rawSecret = $merchantConfig->getSecretKey();
+        if (empty($rawSecret)) {
+            self::$logger->error("AuthException: " . GlobalParameter::JWT_SHARED_SECRET_KEY_REQ);
+            throw new AuthException("AuthException: " . GlobalParameter::JWT_SHARED_SECRET_KEY_REQ);
+        }
+
+        $decodedSecret = base64_decode($rawSecret, true);
+        if ($decodedSecret === false) {
+            self::$logger->error(GlobalParameter::JWT_SHARED_SECRET_DECODE_FAIL);
+            throw new AuthException(GlobalParameter::JWT_SHARED_SECRET_DECODE_FAIL);
+        }
+
+        return JWT::encode($jwtPayload, $decodedSecret, $algorithm, $kid, $headerClaimSet);
     }
 
     private function getPayloadClaimSet($resourcePath, $payloadData, $method, $merchantConfig, $isResponseMLEForAPI)

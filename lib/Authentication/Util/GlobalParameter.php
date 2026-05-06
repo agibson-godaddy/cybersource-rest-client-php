@@ -36,6 +36,12 @@ class GlobalParameter
     const POSTALGOHEADER = "host date request-target digest v-c-merchant-id";
     const GETALGOHEADER = "host date request-target v-c-merchant-id";
     const RS256 = "RS256";
+    const HS256 = "HS256";
+    const HS384 = "HS384";
+    const HS512 = "HS512";
+    const JWT_SIGNING_P12 = "P12";
+    const JWT_SIGNING_SHARED_SECRET = "SHARED_SECRET";
+    const SUPPORTED_JWT_SHARED_SECRET_ALGS = ["HS256", "HS384", "HS512"];
     const FILE_NOT_FOUND = "[ERROR] : File not found, Re-Enter path/file name, Entered path/file name : ";
     const MISSING_REQUEST = "[ERROR] : Request Not Found.";
     const MERCHANTCONFIGERR = "[ERROR] : Merchant Configuration Object is empty!";
@@ -113,5 +119,10 @@ class GlobalParameter
     const REQUEST_MLE_AUTH_ERROR = "Request MLE is only supported in JWT auth type";
     const EMPTY_PRIVATE_OR_PUBLIC_KEY_ERROR = "Private key or public key is empty";
     const PUBLIC_KEY_CACHE_IDENTIFIER = "FlexV2PublicKeys";
+    const JWT_SHARED_SECRET_INVALID_ALG = "Invalid jwtSharedSecretAlgorithm. Supported values are: HS256, HS384, HS512.\n";
+    const JWT_SHARED_SECRET_KEY_ID_REQ = "Merchant ApikeyId is mandatory for JWT shared secret signing\n";
+    const JWT_SHARED_SECRET_KEY_REQ = "MerchantSecretKey is mandatory for JWT shared secret signing\n";
+    const JWT_SHARED_SECRET_DECODE_FAIL = "[ERROR] : Unable to base64 decode the merchantsecretKey value.\n";
+    const REQUEST_MLE_SHARED_SECRET_NOT_SUPPORTED = "Request MLE is not supported when jwtSigningMethod is SHARED_SECRET.";
 }
 ?>
