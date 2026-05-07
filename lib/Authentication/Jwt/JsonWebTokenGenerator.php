@@ -120,7 +120,7 @@ class JsonWebTokenGenerator implements TokenGenerator
         // Set the request method, host and resource path in the JWT body as per the specification for all request types
         $jwtPayload["request-method"] = strtoupper($method);
         $jwtPayload["request-host"] = $merchantConfig->getRunEnvironment();
-        $jwtPayload["request-resource-path"] = $this->extractResourcePath($resourcePath);
+        $jwtPayload["request-resource-path"] = $this->extractResourcePath($resourcePath, $method);
 
         // Choose issuer claim in the JWT body as per the use_metakey flag in the config file
         if($merchantConfig->getUseMetaKey())
@@ -176,13 +176,22 @@ class JsonWebTokenGenerator implements TokenGenerator
         }
     }
 
-    private function extractResourcePath($resourcePath)
+    private function extractResourcePath($resourcePath, $method = null)
     {
         if (empty($resourcePath)) {
             return "";
         }
 
-        // Split the string to remove the query params
+        // GET and DELETE requests have no body to digest, so the query string is the only
+        // request-specific data covered by the JWT signature. Include it in the signed path
+        // to match the HTTP Signature scheme's request-target behavior.
+        $upperMethod = strtoupper((string) $method);
+        if ($upperMethod === GlobalParameter::GET || $upperMethod === GlobalParameter::DELETE) {
+            return $resourcePath;
+        }
+
+        // For body-bearing methods (POST/PUT/PATCH), the body's digest claim covers any
+        // request-specific data, so the path is signed without the query string.
         $parts = explode('?', $resourcePath, 2);
         return $parts[0];
     }
